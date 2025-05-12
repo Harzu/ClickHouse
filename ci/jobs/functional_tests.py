@@ -253,7 +253,7 @@ def main():
                     time.sleep(10)
                 commands.insert(
                     0,
-                    f"wget -nv -P {temp_dir} https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse",
+                    f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
 

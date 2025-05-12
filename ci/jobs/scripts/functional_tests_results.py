@@ -195,7 +195,7 @@ class FTResultsProcessor:
             test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
             state = Result.Status.ERROR
-            info = "Runner error"
+            info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
                 Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
