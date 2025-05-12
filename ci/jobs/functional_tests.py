@@ -74,9 +74,9 @@ def run_tests(
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
         )
     else:
-        extra_args = f" --report-coverage"
+        extra_args += f" --report-coverage"
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
-                --capture-client-stacktrace --queries /repo/tests/queries --test-runs 1 --hung-check \
+                --capture-client-stacktrace --queries ./tests/queries --test-runs 1 --hung-check \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
                 --jobs {nproc} --report-logs-stats {extra_args} \
                 --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
@@ -90,7 +90,7 @@ def run_specific_tests(tests, runs=1):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
-        --capture-client-stacktrace --queries /repo/tests/queries --report-logs-stats --test-runs {runs} \
+        --capture-client-stacktrace --queries ./tests/queries --report-logs-stats --test-runs {runs} \
         --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -114,7 +114,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful",
+    "DatabaseReplicated": " --no-stateful --replicated-database --jobs 3",
 }
 
 
@@ -128,7 +128,10 @@ def main():
     is_flaky_check = False
     is_bugfix_validation = False
     is_s3_storage = False
+    is_database_replicated = False
     runner_options = ""
+    info = Info()
+
     for to in test_options:
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
@@ -136,10 +139,10 @@ def main():
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
         else:
-            if to.startswith("amd_") or to.startswith("arm_"):
-                # this is a binary type
-                continue
-            assert False, f"Unknown option [{to}]"
+            if to.startswith("amd_") or to.startswith("arm_") or "flaky" in to:
+                pass
+            else:
+                assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
@@ -151,9 +154,10 @@ def main():
 
         if "s3 storage" in to:
             is_s3_storage = True
+        if "DatabaseReplicated" in to:
+            is_database_replicated = True
 
     # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-    info = Info()
     if not info.is_local_run:
         os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
@@ -161,10 +165,6 @@ def main():
         )
 
     ch_path = args.ch_path
-    assert (
-        Path(ch_path + "/clickhouse").is_file()
-        or Path(ch_path + "/clickhouse").is_symlink()
-    ), f"clickhouse binary not found under [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
 
@@ -220,8 +220,20 @@ def main():
             f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
             f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
-            configure_log_export,
         ]
+
+        # sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
+        #                                           --pid-file /var/run/clickhouse-server1/clickhouse-server.pid \
+        #                                           -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
+        #                                           --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
+        #                                           --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
+        #
+        # sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
+        #                                           --pid-file /var/run/clickhouse-server2/clickhouse-server.pid \
+        #                                           -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
+        #                                           --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
+        #                                           --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
+
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
         elif is_bugfix_validation:
@@ -231,7 +243,7 @@ def main():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
             else:
                 assert False, "Not supported"
-            if not info.is_local_run() or not (Path(temp_dir) / "clickhouse").exists():
+            if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
                     f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
@@ -243,10 +255,17 @@ def main():
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
+        commands.append(configure_log_export)
+
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
+
+    assert (
+        Path(ch_path + "/clickhouse").is_file()
+        or Path(ch_path + "/clickhouse").is_symlink()
+    ), f"clickhouse binary not found under [{ch_path}]"
 
     if res and JobStages.START in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -265,7 +284,7 @@ def main():
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
-        res = res and CH.start()
+        res = res and CH.start(replicated=is_database_replicated)
         res = res and CH.wait_ready()
         if not Info().is_local_run:
             if not CH.start_log_exports(stop_watch.start_time):
@@ -277,7 +296,11 @@ def main():
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
         ]
-        res = res and CH.prepare_stateful_data(with_s3_storage=is_s3_storage)
+        res = (
+            res
+            and CH.prepare_stateful_data(with_s3_storage=is_s3_storage)
+            and CH.insert_system_zookeeper_config()
+        )
         if res:
             print("stateful data prepared")
         results.append(
@@ -337,6 +360,9 @@ def main():
 
         results[-1].set_timing(stopwatch=stop_watch_)
         res = results[-1].is_ok()
+
+    # TODO: collect logs
+    # and CH.flush_system_logs()
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=logs_to_attach if not res else []

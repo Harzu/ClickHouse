@@ -35,10 +35,10 @@ def check():
     changed_files = Info().get_changed_files()
     if (
         not has_new_unit_tests(changed_files)
-        or has_new_functional_tests(changed_files)
-        or has_new_integration_tests(changed_files)
+        and not has_new_functional_tests(changed_files)
+        and not has_new_integration_tests(changed_files)
     ):
-        print("No new tests have been added")
+        print(f"No new tests have been added")
         return False
     return True
 
