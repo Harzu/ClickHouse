@@ -16,6 +16,7 @@ FAST_TEST=0
 EXPORT_S3_STORAGE_POLICIES=1
 USE_AZURE_STORAGE_FOR_MERGE_TREE=0
 USE_ASYNC_INSERT=0
+BUGFIX_VALIDATE_CHECK=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -32,6 +33,7 @@ while [[ "$#" -gt 0 ]]; do
         --azure) USE_AZURE_STORAGE_FOR_MERGE_TREE=1 ;;
 
         --async-insert) USE_ASYNC_INSERT=1 ;;
+        --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -313,6 +315,18 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     sudo chown clickhouse /var/lib/clickhouse2
     sudo chgrp clickhouse /var/lib/clickhouse1
     sudo chgrp clickhouse /var/lib/clickhouse2
+fi
+
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
+    sudo sed -i "/<use_xid_64>1<\/use_xid_64>/d" $DEST_SERVER_PATH/config.d/zookeeper.xml
+
+    function remove_keeper_config()
+    {
+        sudo sed -i "/<$1>$2<\/$1>/d" $DEST_SERVER_PATH/config.d/keeper_port.xml
+    }
+
+    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
+    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

@@ -97,29 +97,39 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["IS_FLAKY_CHECK"] = 1
-        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = 1000
-        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = 0.1
-        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = 100000
+        os.environ["IS_FLAKY_CHECK"] = "1"
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = 1
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = 1
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = 1
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = 1
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
+            "1"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = 0.001
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = 0.001
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
-            0.001
+            "0.001"
         )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = 0.001
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = 10000
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = 10000
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
+            "0.001"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            10000
+            "10000"
         )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = 10000
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
+            "10000"
+        )
 
     def create_log_export_config(self):
         print("Create log export config")
@@ -218,7 +228,7 @@ class ClickHouseProc:
             return False
         return True
 
-    def prepare_stateful_data(self):
+    def prepare_stateful_data(self, with_s3_storage):
         command = """
 set -e
 set -o pipefail
@@ -258,6 +268,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
 """
+        if with_s3_storage:
+            command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
         return Shell.check(command, strict=True)
 
     def run_fast_test(self, test=""):
