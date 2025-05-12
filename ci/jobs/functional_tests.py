@@ -74,8 +74,12 @@ def run_tests(
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
         )
     else:
-        extra_args += f" --report-coverage"
-    command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check \
+        extra_args += " --report-coverage"
+    if "--no-shard" not in extra_args:
+        extra_args += " --shard"
+    if "--no-zookeeper" not in extra_args:
+        extra_args += " --zookeeper"
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs 1 --hung-check \
                 {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
                 --jobs {nproc} --report-logs-stats {extra_args} \
@@ -237,17 +241,15 @@ def main():
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
         elif is_bugfix_validation:
-            if Utils.is_amd():
-                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-            elif Utils.is_arm():
+            if Utils.is_arm():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
             else:
-                assert False, "Not supported"
+                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
             if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
                     f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
-                if info.is_local_run():
+                if info.is_local_run:
                     time.sleep(10)
                 commands.insert(
                     0,

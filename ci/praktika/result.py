@@ -41,6 +41,7 @@ class Result(MetaClasses.Serializable):
 
     class Status:
         SKIPPED = "skipped"
+        DROPPED = "dropped"
         SUCCESS = "success"
         FAILED = "failure"
         PENDING = "pending"
@@ -554,7 +555,7 @@ class ResultInfo:
     NOT_FOUND_IMPOSSIBLE = (
         "No Result file (bug, or job misbehaviour, must not ever happen)"
     )
-    SKIPPED_DUE_TO_PREVIOUS_FAILURE = "Skipped due to previous failure"
+    DROPPED_DUE_TO_PREVIOUS_FAILURE = "Dropped due to previous failure"
     TIMEOUT = "Timeout"
 
     GH_STATUS_ERROR = "Failed to set GH commit status"
