@@ -303,14 +303,13 @@ class ClickHouseProc:
                     return False
         return True
 
-    def prepare_stateful_data(self, with_s3_storage):
+    def prepare_stateful_data(self, with_s3_storage, is_db_replicated):
+        if is_db_replicated:
+            print("Skip stateful data preparation for db replicated")
+            return True
         command = """
 set -e
 set -o pipefail
-if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    echo "Stateful tests are disabled in replicated database configuration"
-    exit 0
-fi
 
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
@@ -350,9 +349,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def insert_system_zookeeper_config(self):
         for _ in range(10):
             res = Shell.check(
-                f"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')",
+                f"clickhouse-client --query \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
                 verbose=True,
             )
+            time.sleep(1)
             if not res:
                 return True
         else:

@@ -300,7 +300,9 @@ def main():
         ]
         res = (
             res
-            and CH.prepare_stateful_data(with_s3_storage=is_s3_storage)
+            and CH.prepare_stateful_data(
+                with_s3_storage=is_s3_storage, is_db_replicated=is_database_replicated
+            )
             and CH.insert_system_zookeeper_config()
         )
         if res:
@@ -318,10 +320,6 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        assert Shell.check(
-            "clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
-            verbose=True,
-        )
         if not is_flaky_check and not is_bugfix_validation:
             run_tests(
                 no_parallel=no_parallel,
