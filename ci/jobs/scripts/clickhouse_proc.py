@@ -37,11 +37,12 @@ class ClickHouseProc:
 
     def __init__(self, fast_test=False):
         self.ch_config_dir = f"{temp_dir}/etc/clickhouse-server"
+        self.ch_var_lib_dir = f"{temp_dir}/var/lib/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
         self.user_files_path = f"{self.ch_config_dir}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
-        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination"
+        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.ch_var_lib_dir}/user_files --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination"
 
         self.ch_config_dir_replica_1 = f"{temp_dir}/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
@@ -54,8 +55,8 @@ class ClickHouseProc:
             f"{self.ch_config_dir_replica_2}/clickhouse-server.pid"
         )
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
-        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --path {self.ch_config_dir_replica_1} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr1.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --path {self.ch_config_dir_replica_2} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr2.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --user_files_path {self.ch_var_lib_dir}/user_files --path {self.ch_config_dir_replica_1} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr1.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server1.err.log --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --user_files_path {self.ch_var_lib_dir}/user_files --path {self.ch_config_dir_replica_2} --logger.stderr {temp_dir}/var/log/clickhouse-server/stderr2.log --logger.log {temp_dir}/var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog {temp_dir}/var/log/clickhouse-server/clickhouse-server2.err.log --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
@@ -77,6 +78,8 @@ class ClickHouseProc:
         #         file.write(self.BACKUPS_XML)
 
         self.minio_proc = None
+        # required for some test, read in shell_config.sh
+        os.environ["CLICKHOUSE_USER_FILES"] = self.ch_var_lib_dir + "/user_files"
 
     def start_minio(self, test_type, log_file_path):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
@@ -351,9 +354,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             res = Shell.check(
                 f"clickhouse-client --query \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"",
                 verbose=True,
+                strict=True,
             )
             time.sleep(1)
-            if not res:
+            if res:
                 return True
         else:
             return False

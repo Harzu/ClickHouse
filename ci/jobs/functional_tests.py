@@ -10,7 +10,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -200,7 +200,8 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf {temp_dir}/var/log/clickhouse-server/clickhouse-server.*",
+            f"rm -rf {temp_dir}/etc",
+            f"rm -rf {temp_dir}/var/log",
             f"chmod +x {ch_path}/clickhouse",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
@@ -220,8 +221,8 @@ def main():
             # update_path_ch_config,
             # f"sed -i 's|>/var/|>{temp_dir}/var/|g; s|>/etc/|>{temp_dir}/etc/|g' {temp_dir}/etc/clickhouse-server/config.xml",
             # f"sed -i 's|>/etc/|>{temp_dir}/etc/|g' {temp_dir}/etc/clickhouse-server/config.d/ssl_certs.xml",
-            f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
-            f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g' $(readlink -f $file); done",
+            f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g; s|>/var/lib|>{temp_dir}/var/lib|g' $(readlink -f $file); done",
+            f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g; s|>/var/lib|>{temp_dir}/var/lib|g' $(readlink -f $file); done",
             f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
         ]
