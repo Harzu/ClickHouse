@@ -238,11 +238,6 @@ class Result(MetaClasses.Serializable):
         # Collect failed test case names
         failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
 
-        if failed:
-            if len(failed) < 10:
-                failed_tcs = ", ".join(failed)
-                self.set_info(f"Failed: {failed_tcs}")
-
         # Suggest local command to rerun
         command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
         if with_test_in_run_command and failed:

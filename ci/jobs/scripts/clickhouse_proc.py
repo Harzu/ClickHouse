@@ -34,10 +34,12 @@ class ClickHouseProc:
     </backups>
 </clickhouse>
 """
+    MINIO_LOG = f"{temp_dir}/minio.log"
+    AZURITE_LOG = f"{temp_dir}/azurite.log"
 
     def __init__(self, fast_test=False):
         self.ch_config_dir = f"{temp_dir}/etc/clickhouse-server"
-        self.ch_var_lib_dir = f"{temp_dir}/var/lib/clickhouse-server"
+        self.ch_var_lib_dir = f"/var/lib/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
         self.user_files_path = f"{self.ch_config_dir}/user_files"
@@ -71,35 +73,35 @@ class ClickHouseProc:
         Utils.set_env("CLICKHOUSE_CONFIG_DIR", self.ch_config_dir)
         Utils.set_env("CLICKHOUSE_CONFIG", self.config_file)
         Utils.set_env("CLICKHOUSE_USER_FILES", self.user_files_path)
-        # Utils.set_env("CLICKHOUSE_SCHEMA_FILES", f"{self.ch_config_dir}/format_schemas")
-
+        Utils.set_env(
+            "CLICKHOUSE_SCHEMA_FILES", f"{self.ch_var_lib_dir}/format_schemas"
+        )
+        Utils.set_env("CLICKHOUSE_USER_FILES", f"{self.ch_var_lib_dir}/user_files")
         # if not fast_test:
         #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
         #         file.write(self.BACKUPS_XML)
 
         self.minio_proc = None
-        # required for some test, read in shell_config.sh
-        os.environ["CLICKHOUSE_USER_FILES"] = self.ch_var_lib_dir + "/user_files"
 
-    def start_minio(self, test_type, log_file_path):
+    def start_minio(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
             "./ci/jobs/scripts/functional_tests/setup_minio.sh",
             test_type,
             "./tests",
         ]
-        with open(log_file_path, "w") as log_file:
+        with open(self.MINIO_LOG, "w") as log_file:
             process = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
         return True
 
-    def start_azurite(self, log_file_path):
+    def start_azurite(self):
         command = (
             "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
-        with open(log_file_path, "w") as log_file:
+        with open(self.AZURITE_LOG, "w") as log_file:
             process = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
@@ -389,6 +391,35 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         if self.minio_proc:
             Utils.terminate_process_group(self.minio_proc.pid)
+
+    @classmethod
+    def get_logs_archive_coordination(cls):
+        Shell.check(
+            f"find ./ci/tmp/ -type d -name coordination | tar --zstd -cf {temp_dir}/coordination.tar.zst -T -",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/coordination.tar.zst").exists():
+            return f"{temp_dir}/coordination.tar.zst"
+        else:
+            print("WARNING: Coordination logs not found")
+
+    @classmethod
+    def get_logs_archives_if_status_failure(cls):
+        res = []
+        coordination = cls.get_logs_archive_coordination()
+        if coordination:
+            res.append(coordination)
+        if Path(cls.MINIO_LOG).exists():
+            res.append(Utils.compress_file_zst(cls.MINIO_LOG))
+        if Path(cls.AZURITE_LOG).exists():
+            res.append(Utils.compress_file_zst(cls.AZURITE_LOG))
+        return res
+
+    @classmethod
+    def get_logs_archives_server(cls):
+        archive = f"{temp_dir}/server_logs.tar.zst"
+        Shell.check(f"tar --zstd -cvf {archive} -C {temp_dir}/var/log .", verbose=True)
+        return [archive]
 
 
 class ClickHouseLight:

@@ -221,8 +221,8 @@ def main():
             # update_path_ch_config,
             # f"sed -i 's|>/var/|>{temp_dir}/var/|g; s|>/etc/|>{temp_dir}/etc/|g' {temp_dir}/etc/clickhouse-server/config.xml",
             # f"sed -i 's|>/etc/|>{temp_dir}/etc/|g' {temp_dir}/etc/clickhouse-server/config.d/ssl_certs.xml",
-            f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g; s|>/var/lib|>{temp_dir}/var/lib|g' $(readlink -f $file); done",
-            f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g; s|>/var/lib|>{temp_dir}/var/lib|g' $(readlink -f $file); done",
+            f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g;' $(readlink -f $file); done",
+            f"for file in {temp_dir}/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{temp_dir}/var/log|g; s|>/etc/|>{temp_dir}/etc/|g;' $(readlink -f $file); done",
             f"for file in {temp_dir}/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{temp_dir}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
         ]
@@ -274,14 +274,7 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
-        minio_log = f"{temp_dir}/minio.log"
-        azurite_log = f"{temp_dir}/azurite.log"
-        res = (
-            res
-            and CH.start_minio(test_type="stateless", log_file_path=minio_log)
-            and CH.start_azurite(log_file_path=azurite_log)
-        )
-        logs_to_attach += [minio_log, azurite_log]
+        res = res and CH.start_minio(test_type="stateless") and CH.start_azurite()
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
         res = res and Shell.check(
@@ -295,10 +288,6 @@ def main():
                 print("Failed to start log export")
         if res:
             print("ch started")
-        logs_to_attach += [
-            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
-            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
-        ]
         res = (
             res
             and CH.prepare_stateful_data(
@@ -344,6 +333,7 @@ def main():
             else:
                 print("WARNING: No tests to run")
         CH.stop_log_exports()
+        CH.terminate()
         results.append(FTResultsProcessor(wd=temp_dir).run())
 
         # invert result status for bugfix validation
@@ -363,10 +353,29 @@ def main():
         res = results[-1].is_ok()
 
     # TODO: collect logs
+    # blob_storage_log.tsv.zst
+    # coordination.tar
+    # dmesg.log
+    # error_log.tsv.zst
+    # latency_log.tsv.zst
+    # metric_log.tsv.zst
+    # minio.log.zst
+    # minio_audit_logs.jsonl.zst
+    # minio_server_logs.jsonl.zst
+    # part_log.tsv.zst
+    # query_log.tsv.zst
+    # query_metric_log.tsv.zst
+    # trace_log.tsv.zst
+    # transactions_info_log.tsv.zst
+    # zookeeper_log.tsv.zst
     # and CH.flush_system_logs()
 
+    attachments = CH.get_logs_archives_server()
+    if not res:
+        attachments += CH.get_logs_archives_if_status_failure()
+
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=logs_to_attach if not res else []
+        results=results, stopwatch=stop_watch, files=attachments
     ).complete_job()
 
 
