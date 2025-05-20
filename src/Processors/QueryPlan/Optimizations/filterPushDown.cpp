@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -213,16 +214,16 @@ static void buildEquialentSetsForJoinStepLogical(
     std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_column,
     const JoinInfo & join_info)
 {
-    if (!join_info.expression.disjunctive_conditions.empty())
-        return;
-
-    for (const auto & predicate : join_info.expression.condition.predicates)
+    for (const auto & predicate : join_info.expression)
     {
-        auto left_column = predicate.left_node.getColumn();
-        auto right_column = predicate.right_node.getColumn();
-
-        if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
+        JoinActionRef lhs(nullptr);
+        JoinActionRef rhs(nullptr);
+        auto predicate_op = predicate.asFunction({lhs, rhs});
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
             continue;
+
+        auto left_column = lhs.getColumn();
+        auto right_column = rhs.getColumn();
         if (!left_column.type->equals(*right_column.type))
             continue;
         equivalent_left_column[left_column.name] = right_column;

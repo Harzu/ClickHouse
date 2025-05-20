@@ -6,6 +6,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Optimizations/joinCost.h>
 
 namespace DB
 {
@@ -17,7 +19,7 @@ struct PreparedJoinStorage
 {
     std::unordered_map<String, String> column_mapping;
 
-    /// None or one of these fields is set
+    /// At most one of these fields is set
     std::shared_ptr<StorageJoin> storage_join;
     std::shared_ptr<const IKeyValueEntity> storage_key_value;
 
@@ -71,9 +73,6 @@ public:
 
     std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
 
-    void setSwapInputs() { swap_inputs = true; }
-    bool areInputsSwapped() const { return swap_inputs; }
-
     JoinPtr convertToPhysical(
         JoinActionRef & post_filter,
         bool is_explain_logical,
@@ -84,12 +83,10 @@ public:
         const ExpressionActionsSettings & actions_settings,
         std::optional<UInt64> rhs_size_estimation);
 
-    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
+    const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
-
-    void appendRequiredOutputsToActions(JoinActionRef & post_filter);
 
     struct HashTableKeyHashes
     {
@@ -110,7 +107,19 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
-    bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
+
+    bool hasCorrelatedExpressions() const override
+    {
+        return expression_actions.getActionsDAG()->hasCorrelatedColumns();
+    }
+
+    void addConditions(ActionsDAG::NodeRawConstPtrs conditions);
+
+    static void buildPhysicalJoin(
+        QueryPlan::Node & node,
+        std::vector<RelationStats> relation_stats,
+        const QueryPlanOptimizationSettings & optimization_settings,
+        QueryPlan::Nodes & nodes);
 
 protected:
     void updateOutputHeader() override;
@@ -130,8 +139,6 @@ protected:
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
-
-    bool swap_inputs = false;
 
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;

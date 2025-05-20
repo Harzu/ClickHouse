@@ -24,6 +24,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
+#include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
@@ -756,8 +757,13 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    ActionsDAG actions;
     std::unordered_map<const Node *, Node *> copy_map;
+    return cloneSubDAG(outputs, copy_map, remove_aliases);
+}
+
+ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodePtrMap & copy_map, bool remove_aliases)
+{
+    ActionsDAG actions;
 
     struct Frame
     {

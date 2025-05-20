@@ -129,10 +129,7 @@ QueryPlan decorrelateQueryPlan(
         output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan.getCurrentHeader().getColumnsWithTypeAndName());
         output_columns_and_types.insert_range(output_columns_and_types.cend(), node->step->getOutputHeader().getColumnsWithTypeAndName());
 
-        JoinExpressionActions join_expression_actions(
-            lhs_plan_header.getColumnsWithTypeAndName(),
-            decorrelated_plan_header.getColumnsWithTypeAndName(),
-            output_columns_and_types);
+        JoinExpressionActions join_expression_actions(lhs_plan_header, decorrelated_plan_header);
 
         Names output_columns;
         output_columns.insert_range(output_columns.cend(), lhs_plan.getCurrentHeader().getNames());
@@ -141,12 +138,7 @@ QueryPlan decorrelateQueryPlan(
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
             lhs_plan_header,
             /*right_header_=*/decorrelated_plan_header,
-            JoinInfo{
-                .expression = {},
-                .kind = JoinKind::Cross,
-                .strictness = JoinStrictness::All,
-                .locality = JoinLocality::Local
-            },
+            JoinInfo(JoinKind::Cross),
             std::move(join_expression_actions),
             std::move(output_columns),
             settings[Setting::join_use_nulls],
@@ -368,10 +360,7 @@ QueryPlan buildLogicalJoin(
     output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header.getColumnsWithTypeAndName());
     output_columns_and_types.emplace_back(rhs_plan_header.getByName(correlated_subquery.action_node_name));
 
-    JoinExpressionActions join_expression_actions(
-        lhs_plan_header.getColumnsWithTypeAndName(),
-        rhs_plan_header.getColumnsWithTypeAndName(),
-        output_columns_and_types);
+    JoinExpressionActions join_expression_actions(lhs_plan_header, rhs_plan_header);
 
     Names output_columns;
     output_columns.insert_range(output_columns.cend(), lhs_plan_header.getNames());
@@ -379,39 +368,21 @@ QueryPlan buildLogicalJoin(
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    std::vector<JoinPredicate> predicates;
+    std::vector<JoinActionRef> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(column_name);
-        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name));
-
-        JoinPredicate predicate{
-            .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
-            .right_node = JoinActionRef(right_node, join_expression_actions.right_pre_join_actions.get()),
-            .op = PredicateOperator::Equals
-        };
-
-        predicates.emplace_back(std::move(predicate));
+        std::vector<JoinActionRef> eq_arguments;
+        eq_arguments.push_back(join_expression_actions.findNode(column_name));
+        eq_arguments.push_back(join_expression_actions.findNode(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)));
+        auto eq_node = join_expression_actions.addFunction(eq_arguments, JoinConditionOperator::Equals);
+        predicates.push_back(eq_node);
     }
 
     /// Add LEFT OUTER JOIN
     auto result_join = std::make_unique<JoinStepLogical>(
         lhs_plan_header,
         rhs_plan_header,
-        JoinInfo{
-            .expression = JoinExpression{
-                .condition = JoinCondition{
-                    .predicates = std::move(predicates),
-                    .left_filter_conditions = {},
-                    .right_filter_conditions = {},
-                    .residual_conditions = {}
-                },
-                .disjunctive_conditions = {}
-            },
-            .kind = JoinKind::Left,
-            .strictness = JoinStrictness::Any,
-            .locality = JoinLocality::Local
-        },
+        JoinInfo(JoinKind::Left, JoinStrictness::Any, JoinLocality::Local, std::move(predicates)),
         std::move(join_expression_actions),
         std::move(output_columns),
         /*join_use_nulls=*/false,

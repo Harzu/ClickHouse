@@ -164,14 +164,6 @@ struct JoinConditionPart
 
 using JoinConditionParts = std::vector<JoinConditionPart>;
 
-JoinConditionPart createConditionPart(const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
-{
-    auto lhs_dag = ActionsDAG::cloneSubDAG({ lhs }, true);
-    auto rhs_dag = ActionsDAG::cloneSubDAG({ rhs }, true);
-
-    return JoinConditionPart{ .left = std::move(lhs_dag), .right = std::move(rhs_dag) };
-};
-
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
     const ActionsDAG::Node * original_predicate,
@@ -188,7 +180,7 @@ const ActionsDAG::Node & createResultPredicate(
 };
 
 
-std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
+std::pair<ActionsDAG::NodeRawConstPtrs, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
@@ -213,7 +205,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     /// Extract all conjuncts from filter expression
     auto conjuncts_list = getConjunctsList(predicate);
 
-    JoinConditionParts result;
+    ActionsDAG::NodeRawConstPtrs result;
     std::unordered_set<const ActionsDAG::Node *> conjuncts_to_replace;
     ActionsDAG::NodeRawConstPtrs rejected_conjuncts;
     rejected_conjuncts.reserve(conjuncts_list.size());
@@ -230,16 +222,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
             auto rhs_side = getExpressionSide(rhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
 
-            if (lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
+            if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
+             || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
-                result.emplace_back(createConditionPart(lhs, rhs));
-                conjuncts_to_replace.insert(conjunct);
-                continue;
-            }
-            else if (rhs_side == ExpressionSide::LEFT && lhs_side == ExpressionSide::RIGHT)
-            {
-                result.emplace_back(createConditionPart(rhs, lhs));
-                conjuncts_to_replace.insert(conjunct);
+                result.push_back(conjunct);
                 continue;
             }
         }
@@ -300,7 +286,6 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (!filter_step || !join_step)
         return 0;
 
-    const auto & join_expressions = join_step->getExpressionActions();
     auto & join_info = join_step->getJoinInfo();
 
     auto kind = join_info.kind;
@@ -351,20 +336,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (equality_predicates.empty())
         return 0;
 
-    for (auto & predicate : equality_predicates)
-    {
-        auto lhs_node_name = predicate.left.getOutputs()[0]->result_name;
-        auto rhs_node_name = predicate.right.getOutputs()[0]->result_name;
-
-        join_expressions.left_pre_join_actions->mergeNodes(std::move(predicate.left));
-        join_expressions.right_pre_join_actions->mergeNodes(std::move(predicate.right));
-
-        join_info.expression.condition.predicates.emplace_back(JoinPredicate{
-            .left_node = JoinActionRef(&join_expressions.left_pre_join_actions->findInOutputs(lhs_node_name), join_expressions.left_pre_join_actions.get()),
-            .right_node = JoinActionRef(&join_expressions.right_pre_join_actions->findInOutputs(rhs_node_name), join_expressions.right_pre_join_actions.get()),
-            .op = PredicateOperator::Equals
-        });
-    }
+    join_step->addConditions(std::move(equality_predicates));
 
     if (kind == JoinKind::Cross || kind == JoinKind::Comma)
         join_info.kind = JoinKind::Inner;

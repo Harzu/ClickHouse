@@ -216,14 +216,14 @@ JoinStrictness TableJoin::strictness() const
 bool TableJoin::hasUsing() const
 {
     if (join_info)
-        return join_info->expression.is_using;
+        return false;
     return table_join.using_expression_list != nullptr;
 }
 
 bool TableJoin::hasOn() const
 {
     if (join_info)
-        return !join_info->expression.is_using;
+        return true;
     return table_join.on_expression != nullptr;
 }
 
