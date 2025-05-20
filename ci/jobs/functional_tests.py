@@ -201,7 +201,7 @@ def main():
 
         commands = [
             f"rm -rf {temp_dir}/etc",
-            f"rm -rf {temp_dir}/var/log",
+            f"rm -rf {temp_dir}/var/log && mkdir -p {temp_dir}/var/log",
             f"chmod +x {ch_path}/clickhouse",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",

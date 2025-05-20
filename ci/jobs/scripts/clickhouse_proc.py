@@ -286,7 +286,7 @@ class ClickHouseProc:
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print(f"Server not ready, err: {err}, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
